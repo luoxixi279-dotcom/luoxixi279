@@ -14,7 +14,7 @@
  *      d. 每个账号必须使用各自 session，且与用户ID一一对应
  *
  *    示例：
- *    张三#28#session=abc123xyz789&李四#38#session=qwe456rty012
+ *    张三#228#session=abc123xyz789&李四#38#session=qwe456rty012
  *
  * 2) FAKERCLAW_ACCOUNTS（兼容旧版账号密码）
  *    格式：账号#密码&账号#密码
