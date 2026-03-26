@@ -1,0 +1,128 @@
+/**
+ * 京东 & 京东金融多账号自动同步 (Loon 专用)
+ * 功能：多账号识别、3分钟冷却机制、自动更新青龙环境变量
+ */
+
+const QL_CONFIG = {
+    addr: 'http:/192.168.31.66:5700',
+    client_id: '112233',
+    client_secret: '445566'
+};
+
+const COOLDOWN_MS = 3 * 60 * 1000; // 3分钟冷却时间
+
+const headerCookie = $request.headers['Cookie'] || $request.headers['cookie'];
+
+if (headerCookie) {
+    const ptKey = headerCookie.match(/pt_key=([^; ]+)(?=;?)/);
+    const ptPin = headerCookie.match(/pt_pin=([^; ]+)(?=;?)/);
+
+    if (ptKey && ptPin) {
+        const pin = ptPin[1];
+        const ck = `pt_key=${ptKey[1]};pt_pin=${pin};`;
+        
+        const storageKey = `jd_ck_${pin}`;
+        const timeKey = `jd_time_${pin}`;
+        
+        const lastCk = $persistentStore.read(storageKey);
+        const lastSyncTime = parseInt($persistentStore.read(timeKey) || "0");
+        const now = Date.now();
+
+        // 核心判断逻辑
+        if (lastCk !== ck) {
+            // 情况 A：Cookie 发生变化（如重新登录），无视冷却立即同步
+            console.log(`[京东脚本] 账号 ${pin} 凭据变化，准备同步...`);
+            syncToQL(ck, pin, storageKey, timeKey);
+        } else if (now - lastSyncTime > COOLDOWN_MS) {
+            // 情况 B：Cookie 未变，但已超过 3 分钟，执行定期检查同步
+            console.log(`[京东脚本] 账号 ${pin} 冷却期已过，开始例行同步...`);
+            syncToQL(ck, pin, storageKey, timeKey);
+        } else {
+            // 情况 C：在冷却时间内且 Cookie 未变
+            const remaining = Math.ceil((COOLDOWN_MS - (now - lastSyncTime)) / 1000);
+            console.log(`[京东脚本] 账号 ${pin} 处于冷却期，剩余 ${remaining} 秒`);
+            $done({});
+        }
+    } else {
+        $done({});
+    }
+} else {
+    $done({});
+}
+
+// --- 青龙同步逻辑 ---
+async function syncToQL(ck, pin, storageKey, timeKey) {
+    try {
+        // 1. 获取 Token
+        const tokenRes = await qlRequest('/open/auth/token', {
+            client_id: QL_CONFIG.client_id,
+            client_secret: QL_CONFIG.client_secret
+        }, 'GET');
+        
+        const token = tokenRes.data.token;
+        const authHeader = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+        // 2. 查找变量
+        const envsRes = await qlRequest(`/open/envs?searchValue=${pin}`, null, 'GET', authHeader);
+        const envs = envsRes.data || [];
+        let targetEnv = envs.find(e => e.name === 'JD_COOKIE' && e.value.includes(`pt_pin=${pin}`));
+
+        if (targetEnv) {
+            // 3. 更新
+            await qlRequest('/open/envs', {
+                name: 'JD_COOKIE',
+                value: ck,
+                id: targetEnv.id || targetEnv._id,
+                remarks: targetEnv.remarks || `Loon自动更新`
+            }, 'PUT', authHeader);
+            $notification.post("🔄 京东同步：更新成功", `账号: ${decodeURIComponent(pin)}`, "青龙面板数据已刷新");
+        } else {
+            // 4. 新增
+            await qlRequest('/open/envs', [{
+                name: 'JD_COOKIE',
+                value: ck,
+                remarks: `Loon新增-${pin}`
+            }], 'POST', authHeader);
+            $notification.post("✨ 京东同步：新增账号", `账号: ${decodeURIComponent(pin)}`, "已成功添加至青龙面板");
+        }
+
+        // 同步成功后记录时间和 CK
+        $persistentStore.write(ck, storageKey);
+        $persistentStore.write(Date.now().toString(), timeKey);
+    } catch (e) {
+        console.log(`[京东脚本] 同步失败: ${e.message}`);
+        // 只有在 CK 变化同步失败时才通知，避免冷却期内的网络波动高频报错
+        if ($persistentStore.read(storageKey) !== ck) {
+            $notification.post("❌ 青龙同步错误", `账号: ${pin}`, e.message);
+        }
+    } finally {
+        $done({});
+    }
+}
+
+function qlRequest(path, body, method, headers = {}) {
+    return new Promise((resolve, reject) => {
+        const url = `${QL_CONFIG.addr}${path}`;
+        const opts = { url, headers, timeout: 5000 };
+        if (method === 'POST' || method === 'PUT') opts.body = JSON.stringify(body);
+        if (method === 'GET' && body) {
+            const query = Object.keys(body).map(k => `${k}=${body[k]}`).join('&');
+            opts.url += `?${query}`;
+        }
+
+        const httpMethod = method.toLowerCase() === 'get' ? $httpClient.get : 
+                          method.toLowerCase() === 'post' ? $httpClient.post : $httpClient.put;
+
+        httpMethod(opts, (err, resp, data) => {
+            if (err) reject(err);
+            else {
+                try {
+                    const res = JSON.parse(data);
+                    res.code === 200 ? resolve(res) : reject(new Error(res.message || "接口返回错误"));
+                } catch (parseErr) {
+                    reject(new Error("青龙面板返回格式异常，请检查地址是否正确"));
+                }
+            }
+        });
+    });
+}
