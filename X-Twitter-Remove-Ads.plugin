@@ -55,28 +55,28 @@ DOMAIN-SUFFIX, reports.crashlytics.com, REJECT
 # 适用于 Loon，需要开启 MITM
 
 # 时间线和广告拦截 - Home Timeline
-http-response ^https?://(api|api-prod\.turner)\.(twitter|x)\.com/2/(timeline|users)/.*$ requires-body=1,script-path=x_ad_remove.js,tag=X_AdRemover,enable=true
+http-response ^https?://(api|api-prod\.turner)\.(twitter|x)\.com/2/(timeline|users)/.*$ requires-body=1,script-path=https://raw.githubusercontent.com/luoxixi279-dotcom/luoxixi279/refs/heads/main/x_ad_remove.js,tag=X_AdRemover,enable=true
 
 # 搜索拦截 - Search
-http-response ^https?://(api|api-prod\.turner)\.(twitter|x)\.com/2/search/.*$ requires-body=1,script-path=x_ad_remove.js,tag=X_SearchAdRemover,enable=true
+http-response ^https?://(api|api-prod\.turner)\.(twitter|x)\.com/2/search/.*$ requires-body=1,script-path=https://raw.githubusercontent.com/luoxixi279-dotcom/luoxixi279/refs/heads/main/x_ad_remove.js,tag=X_SearchAdRemover,enable=true
 
 # 通知拦截 - Notifications
-http-response ^https?://(api|api-prod\.turner)\.(twitter|x)\.com/2/notifications/.*$ requires-body=1,script-path=x_ad_remove.js,tag=X_NotifAdRemover,enable=true
+http-response ^https?://(api|api-prod\.turner)\.(twitter|x)\.com/2/notifications/.*$ requires-body=1,script-path=https://raw.githubusercontent.com/luoxixi279-dotcom/luoxixi279/refs/heads/main/x_ad_remove.js,tag=X_NotifAdRemover,enable=true
 
 # Topics 页面拦截
-http-response ^https?://(api|api-prod\.turner)\.(twitter|x)\.com/2/topics/.*$ requires-body=1,script-path=x_ad_remove.js,tag=X_TopicsAdRemover,enable=true
+http-response ^https?://(api|api-prod\.turner)\.(twitter|x)\.com/2/topics/.*$ requires-body=1,script-path=https://raw.githubusercontent.com/luoxixi279-dotcom/luoxixi279/refs/heads/main/x_ad_remove.js,tag=X_TopicsAdRemover,enable=true
 
 # 推荐关注/Who to follow 拦截
-http-response ^https?://(api|api-prod\.turner)\.(twitter|x)\.com/2/users/recommendations.*$ requires-body=1,script-path=x_ad_remove.js,tag=X_RecommendRemover,enable=true
+http-response ^https?://(api|api-prod\.turner)\.(twitter|x)\.com/2/users/recommendations.*$ requires-body=1,script-path=https://raw.githubusercontent.com/luoxixi279-dotcom/luoxixi279/refs/heads/main/x_ad_remove.js,tag=X_RecommendRemover,enable=true
 
 # 启动配置拦截 (去除开屏广告配置)
-http-response ^https?://api\.(twitter|x)\.com/1.1/account/settings.json requires-body=1,script-path=x_ad_remove.js,tag=X_Settings,enable=true
+http-response ^https?://api\.(twitter|x)\.com/1.1/account/settings.json requires-body=1,script-path=https://raw.githubusercontent.com/luoxixi279-dotcom/luoxixi279/refs/heads/main/x_ad_remove.js,tag=X_Settings,enable=true
 
 # GraphQL 拦截 (新版Twitter/X)
-http-response ^https?://(api|api-prod\.turner)\.(twitter|x)\.com/graphql/.*(HomeTimeline|Timeline|Search|User|Trend|Notification|Topic).*$ requires-body=1,script-path=x_ad_remove.js,tag=X_GraphQL_AdRemover,enable=true
+http-response ^https?://(api|api-prod\.turner)\.(twitter|x)\.com/graphql/.*(HomeTimeline|Timeline|Search|User|Trend|Notification|Topic).*$ requires-body=1,script-path=https://raw.githubusercontent.com/luoxixi279-dotcom/luoxixi279/refs/heads/main/x_ad_remove.js,tag=X_GraphQL_AdRemover,enable=true
 
 # Promoted content 拦截
-http-response ^https?://(api|api-prod\.turner)\.(twitter|x)\.com/.*promoted.*$ requires-body=1,script-path=x_ad_remove.js,tag=X_PromotedRemover,enable=true
+http-response ^https?://(api|api-prod\.turner)\.(twitter|x)\.com/.*promoted.*$ requires-body=1,script-path=https://raw.githubusercontent.com/luoxixi279-dotcom/luoxixi279/refs/heads/main/x_ad_remove.js,tag=X_PromotedRemover,enable=true
 
 [MitM]
 # MITM 域名配置
