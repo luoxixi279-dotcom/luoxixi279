@@ -1,0 +1,112 @@
+#!pluginName = 𝕏(Twitter) 去广告
+#!pluginDesc = 移除开屏广告、时间线广告、推荐用户、搜索广告、推广推文，移除链接追踪参数
+#!author = 综合网络资源整理
+#!icon = https://raw.githubusercontent.com/fmz200/wool_scripts/main/icons/apps/Twitter.png
+#!homepage = https://github.com/fmz200/wool_scripts
+#!select = 是否移除推荐用户:true,false
+#!select = 是否移除视频/GIF赞助标签:true,false
+#!select = 是否移除建议用户模块:true,false
+
+[Rule]
+# ========== 阻止广告域名 ==========
+# X/Twitter 广告相关域名
+DOMAIN-SUFFIX, ads.twitter.com, REJECT
+DOMAIN-SUFFIX, ads-api.twitter.com, REJECT
+DOMAIN-SUFFIX, static.ads-twitter.com, REJECT
+DOMAIN-SUFFIX, analytics.twitter.com, REJECT
+DOMAIN-SUFFIX, scribe.twitter.com, REJECT
+DOMAIN-SUFFIX, x.com:i, REJECT
+DOMAIN-SUFFIX, ads-api.x.com, REJECT
+
+# Google 广告 (用于Twitter移动广告)
+DOMAIN-SUFFIX, googleads.g.doubleclick.net, REJECT
+DOMAIN-SUFFIX, googleadservices.com, REJECT
+DOMAIN-SUFFIX, googlesyndication.com, REJECT
+DOMAIN-SUFFIX, googletagmanager.com, REJECT
+
+# Facebook/Meta 广告
+DOMAIN-SUFFIX, graph.instagram.com, REJECT
+DOMAIN-SUFFIX, connect.facebook.net, REJECT
+
+# 其他追踪域名
+DOMAIN-SUFFIX, adzerk.net, REJECT
+DOMAIN-SUFFIX, ads-twitter.com, REJECT
+DOMAIN-SUFFIX, platform.twitter.com, REJECT
+
+# MoPub 广告
+DOMAIN-SUFFIX, mopub.com, REJECT
+DOMAIN-SUFFIX, ads.mopub.com, REJECT
+DOMAIN-SUFFIX, analytics.mopub.com, REJECT
+
+# Crashlytics/Fabric
+DOMAIN-SUFFIX, settings.crashlytics.com, REJECT
+DOMAIN-SUFFIX, e.crashlytics.com, REJECT
+DOMAIN-SUFFIX, reports.crashlytics.com, REJECT
+
+[URL Rewrite]
+# ========== 移除 t.co 链接追踪 ==========
+^https?://t\.co/([a-zA-Z0-9]+)^307 $1:https://x.com/$1
+
+# ========== 移除 utm 等追踪参数 ==========
+^https?://(www\.)?(x\.com|twitter\.com)/.+\?(.*) $1:$1://$2/$3?^(?!(.*(utm_|ref=|source=|medium=|campaign=)))(.*)$
+
+[Script]
+# ========== X (Twitter) 去广告脚本 ==========
+# 适用于 Loon，需要开启 MITM
+
+# 时间线和广告拦截 - Home Timeline
+http-response ^https?://(api|api-prod\.turner)\.(twitter|x)\.com/2/(timeline|users)/.*$ requires-body=1,script-path=x_ad_remove.js,tag=X_AdRemover,enable=true
+
+# 搜索拦截 - Search
+http-response ^https?://(api|api-prod\.turner)\.(twitter|x)\.com/2/search/.*$ requires-body=1,script-path=x_ad_remove.js,tag=X_SearchAdRemover,enable=true
+
+# 通知拦截 - Notifications
+http-response ^https?://(api|api-prod\.turner)\.(twitter|x)\.com/2/notifications/.*$ requires-body=1,script-path=x_ad_remove.js,tag=X_NotifAdRemover,enable=true
+
+# Topics 页面拦截
+http-response ^https?://(api|api-prod\.turner)\.(twitter|x)\.com/2/topics/.*$ requires-body=1,script-path=x_ad_remove.js,tag=X_TopicsAdRemover,enable=true
+
+# 推荐关注/Who to follow 拦截
+http-response ^https?://(api|api-prod\.turner)\.(twitter|x)\.com/2/users/recommendations.*$ requires-body=1,script-path=x_ad_remove.js,tag=X_RecommendRemover,enable=true
+
+# 启动配置拦截 (去除开屏广告配置)
+http-response ^https?://api\.(twitter|x)\.com/1.1/account/settings.json requires-body=1,script-path=x_ad_remove.js,tag=X_Settings,enable=true
+
+# GraphQL 拦截 (新版Twitter/X)
+http-response ^https?://(api|api-prod\.turner)\.(twitter|x)\.com/graphql/.*(HomeTimeline|Timeline|Search|User|Trend|Notification|Topic).*$ requires-body=1,script-path=x_ad_remove.js,tag=X_GraphQL_AdRemover,enable=true
+
+# Promoted content 拦截
+http-response ^https?://(api|api-prod\.turner)\.(twitter|x)\.com/.*promoted.*$ requires-body=1,script-path=x_ad_remove.js,tag=X_PromotedRemover,enable=true
+
+[MitM]
+# MITM 域名配置
+hostname = api.twitter.com, twitter.com, x.com, api.x.com, cdn.twitter.com, abs.twimg.com, g.co, t.co, translate.twitter.com, api-prod.turner.twitter.com, api-prod.turner.x.com
+
+# 通配符证书 (可选，可能需要手动信任)
+#wildcard = false
+
+[Host]
+# ========== 屏蔽追踪域名 ==========
+# 屏蔽广告域名解析
+ads.twitter.com = 0.0.0.0
+ads-api.twitter.com = 0.0.0.0
+static.ads-twitter.com = 0.0.0.0
+analytics.twitter.com = 0.0.0.0
+scribe.twitter.com = 0.0.0.0
+crashlytics.com = 0.0.0.0
+e.crashlytics.com = 0.0.0.0
+reports.crashlytics.com = 0.0.0.0
+settings.crashlytics.com = 0.0.0.0
+
+[General]
+# 回退支持
+force-http-engine-hosts = api.twitter.com,api.x.com
+dns-server = system
+
+# ===================================
+# 🔧 使用说明：
+# 1. 在Loon配置中导入此插件
+# 2. 确保开启 MITM 功能并安装证书
+# 3. 重启X(Twitter)应用生效
+# 4. 部分功能可能需要更新到最新版X应用
+# ===================================
