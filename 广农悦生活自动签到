@@ -1,0 +1,707 @@
+/*
+ * 广农悦生活 - Loon 自动签到
+ * 版本：1.0
+ *
+ * 功能：
+ * 1. 自动抓取微信小程序 session_id
+ * 2. 自动保存 session_id
+ * 3. 支持多账号
+ * 4. 每日自动签到
+ * 5. 自动获取用户名
+ * 6. 显示累计签到天数 / 连续签到天数 / 积分
+ * 7. 自动通知签到结果
+ *
+ * 使用方法：
+ * - 把本文件保存为：广农悦生活签到.js
+ * - 添加到 Loon
+ * - 打开一次“广农悦生活”微信小程序
+ * - Loon 会自动抓取 session_id
+ * - 后续由定时任务自动签到
+ */
+
+const $ = new Env("广农悦生活签到");
+
+const CONFIG = {
+    host: "bigshop.gxntysh.cn",
+
+    aid: "3",
+    platform: "wx",
+    pid: "0",
+    scene: "1089",
+
+    // 本地保存账号的变量
+    storageKey: "GXNTYSH_SESSIONS",
+
+    // 请求超时
+    timeout: 10000
+};
+
+
+// ===============================
+// Loon 请求拦截：自动抓取 session_id
+// ===============================
+
+if ($request) {
+
+    const url = $request.url || "";
+
+    if (
+        url.includes(CONFIG.host) &&
+        url.includes("session_id=")
+    ) {
+
+        const match = url.match(/[?&]session_id=([^&]+)/);
+
+        if (match && match[1]) {
+
+            const session_id = decodeURIComponent(match[1]);
+
+            saveSession(session_id);
+
+            console.log(
+                "广农悦生活：成功抓取 session_id"
+            );
+        }
+    }
+
+    $done({});
+}
+
+
+// ===============================
+// 定时任务入口
+// ===============================
+
+if (!$request) {
+
+    run();
+}
+
+
+// ===============================
+// 主程序
+// ===============================
+
+async function run() {
+
+    try {
+
+        const sessions = getSessions();
+
+        if (!sessions.length) {
+
+            notify(
+                "广农悦生活",
+                "❌ 没有获取到账号",
+                "请先打开一次广农悦生活微信小程序"
+            );
+
+            $done();
+            return;
+        }
+
+
+        let result = [];
+
+        for (let i = 0; i < sessions.length; i++) {
+
+            const session_id = sessions[i];
+
+            try {
+
+                const info = await getUserInfo(session_id);
+
+                if (!info.success) {
+
+                    result.push(
+                        `❌ 账号 ${i + 1}\n${info.message}`
+                    );
+
+                    continue;
+                }
+
+
+                const user = info.data;
+
+                const nickname =
+                    user.nickname ||
+                    user.nickName ||
+                    user.username ||
+                    `账号${i + 1}`;
+
+
+                const beforeContinuous =
+                    toNumber(
+                        user.signtimeslx ||
+                        user.sign_times_lx ||
+                        user.continuous_sign_days ||
+                        user.continue_days
+                    );
+
+
+                const totalSign =
+                    toNumber(
+                        user.signtimes ||
+                        user.sign_times ||
+                        user.sign_days ||
+                        user.total_sign_days
+                    );
+
+
+                const score =
+                    user.score ||
+                    user.integral ||
+                    user.points ||
+                    0;
+
+
+                // ===============================
+                // 执行签到
+                // ===============================
+
+                const signResult =
+                    await signIn(session_id);
+
+
+                // ===============================
+                // 再次获取信息
+                // ===============================
+
+                const afterInfo =
+                    await getUserInfo(session_id);
+
+
+                let finalUser = user;
+
+                if (afterInfo.success) {
+                    finalUser = afterInfo.data;
+                }
+
+
+                const finalContinuous =
+                    toNumber(
+                        finalUser.signtimeslx ||
+                        finalUser.sign_times_lx ||
+                        finalUser.continuous_sign_days ||
+                        finalUser.continue_days
+                    );
+
+
+                const finalTotal =
+                    toNumber(
+                        finalUser.signtimes ||
+                        finalUser.sign_times ||
+                        finalUser.sign_days ||
+                        finalUser.total_sign_days
+                    );
+
+
+                const finalScore =
+                    finalUser.score ||
+                    finalUser.integral ||
+                    finalUser.points ||
+                    score ||
+                    0;
+
+
+                let status = "";
+
+
+                if (signResult.success) {
+
+                    status = "✅ 今日签到成功";
+
+                } else {
+
+                    status =
+                        "ℹ️ " +
+                        (signResult.message || "今日可能已经签到");
+                }
+
+
+                result.push(
+                    `👤 用户：${nickname}\n` +
+                    `${status}\n` +
+                    `🔥 连续签到：${finalContinuous} 天\n` +
+                    `📊 累计签到：${finalTotal} 天\n` +
+                    `⭐ 当前积分：${finalScore}`
+                );
+
+
+            } catch (e) {
+
+                result.push(
+                    `❌ 账号 ${i + 1}\n` +
+                    `执行异常：${e}`
+                );
+            }
+
+
+            // 多账号之间稍微间隔一下
+            if (i < sessions.length - 1) {
+
+                await sleep(
+                    randomInt(1000, 5000)
+                );
+            }
+        }
+
+
+        notify(
+            "🌾 广农悦生活",
+            `签到完成，共 ${sessions.length} 个账号`,
+            result.join("\n\n────────────\n\n")
+        );
+
+
+    } catch (e) {
+
+        notify(
+            "广农悦生活",
+            "❌ 脚本运行失败",
+            String(e)
+        );
+    }
+
+    $done();
+}
+
+
+// ===============================
+// 获取用户信息
+// ===============================
+
+function getUserInfo(session_id) {
+
+    const url =
+        `https://${CONFIG.host}/` +
+        `?s=/ApiSign/index` +
+        `&aid=${CONFIG.aid}` +
+        `&platform=${CONFIG.platform}` +
+        `&session_id=${encodeURIComponent(session_id)}` +
+        `&pid=${CONFIG.pid}` +
+        `&scene=${CONFIG.scene}`;
+
+
+    return new Promise(resolve => {
+
+        $.get(
+            {
+                url: url,
+                timeout: CONFIG.timeout
+            },
+            (error, response, data) => {
+
+                if (error) {
+
+                    resolve({
+                        success: false,
+                        message: "获取用户信息失败：" + error
+                    });
+
+                    return;
+                }
+
+
+                try {
+
+                    const json =
+                        typeof data === "string"
+                            ? JSON.parse(data)
+                            : data;
+
+
+                    /*
+                     * 不同版本接口可能存在：
+                     * data
+                     * data.data
+                     * info
+                     * user
+                     */
+
+                    let user =
+                        json.data ||
+                        json.info ||
+                        json.user ||
+                        {};
+
+
+                    if (
+                        user.data &&
+                        typeof user.data === "object"
+                    ) {
+                        user = user.data;
+                    }
+
+
+                    // 有些接口会把用户信息放在 data.data
+                    if (
+                        json.data &&
+                        json.data.data &&
+                        typeof json.data.data === "object"
+                    ) {
+                        user = json.data.data;
+                    }
+
+
+                    const code =
+                        json.code !== undefined
+                            ? json.code
+                            : 1;
+
+
+                    if (
+                        code === 0 ||
+                        code === 200 ||
+                        Object.keys(user).length > 0
+                    ) {
+
+                        resolve({
+                            success: true,
+                            data: user
+                        });
+
+                    } else {
+
+                        resolve({
+                            success: false,
+                            message:
+                                json.msg ||
+                                json.message ||
+                                "账号可能已经失效"
+                        });
+                    }
+
+
+                } catch (e) {
+
+                    resolve({
+                        success: false,
+                        message: "解析用户信息失败"
+                    });
+                }
+            }
+        );
+    });
+}
+
+
+// ===============================
+// 执行签到
+// ===============================
+
+function signIn(session_id) {
+
+    const url =
+        `https://${CONFIG.host}/` +
+        `?s=/ApiSign/signin` +
+        `&aid=${CONFIG.aid}` +
+        `&platform=${CONFIG.platform}` +
+        `&session_id=${encodeURIComponent(session_id)}` +
+        `&pid=${CONFIG.pid}` +
+        `&scene=${CONFIG.scene}`;
+
+
+    return new Promise(resolve => {
+
+        $.get(
+            {
+                url: url,
+                timeout: CONFIG.timeout
+            },
+            (error, response, data) => {
+
+                if (error) {
+
+                    resolve({
+                        success: false,
+                        message: "签到请求失败：" + error
+                    });
+
+                    return;
+                }
+
+
+                try {
+
+                    const json =
+                        typeof data === "string"
+                            ? JSON.parse(data)
+                            : data;
+
+
+                    const message =
+                        json.msg ||
+                        json.message ||
+                        json.data?.msg ||
+                        json.data?.message ||
+                        "";
+
+
+                    const code =
+                        json.code !== undefined
+                            ? json.code
+                            : 0;
+
+
+                    /*
+                     * 常见情况：
+                     *
+                     * code = 0 / 200
+                     * 表示成功
+                     *
+                     * 如果服务器直接返回
+                     * “今日已签到”等文字，
+                     * 则也当作已处理。
+                     */
+
+                    if (
+                        code === 0 ||
+                        code === 200
+                    ) {
+
+                        resolve({
+                            success: true,
+                            message: message || "签到成功"
+                        });
+
+                        return;
+                    }
+
+
+                    if (
+                        /已签到|签到过|重复签到/.test(
+                            JSON.stringify(json)
+                        )
+                    ) {
+
+                        resolve({
+                            success: false,
+                            message: "今日已经签到"
+                        });
+
+                        return;
+                    }
+
+
+                    resolve({
+                        success: false,
+                        message:
+                            message ||
+                            "签到失败"
+                    });
+
+
+                } catch (e) {
+
+                    resolve({
+                        success: false,
+                        message: "签到返回数据解析失败"
+                    });
+                }
+            }
+        );
+    });
+}
+
+
+// ===============================
+// 保存 session
+// ===============================
+
+function saveSession(session_id) {
+
+    if (!session_id) return;
+
+
+    let sessions = getSessions();
+
+
+    if (!sessions.includes(session_id)) {
+
+        sessions.push(session_id);
+
+        $.setdata(
+            JSON.stringify(sessions),
+            CONFIG.storageKey
+        );
+
+
+        console.log(
+            `广农悦生活：已保存账号，当前 ${sessions.length} 个`
+        );
+    }
+}
+
+
+// ===============================
+// 获取本地 session
+// ===============================
+
+function getSessions() {
+
+    let data =
+        $.getdata(CONFIG.storageKey);
+
+
+    if (!data) return [];
+
+
+    try {
+
+        const sessions =
+            JSON.parse(data);
+
+
+        if (Array.isArray(sessions)) {
+
+            return sessions.filter(Boolean);
+        }
+
+    } catch (e) {
+
+        console.log(
+            "session 数据解析失败"
+        );
+    }
+
+
+    return [];
+}
+
+
+// ===============================
+// 数字转换
+// ===============================
+
+function toNumber(value) {
+
+    if (
+        value === undefined ||
+        value === null ||
+        value === ""
+    ) {
+        return 0;
+    }
+
+
+    const n =
+        parseInt(value, 10);
+
+
+    return isNaN(n) ? 0 : n;
+}
+
+
+// ===============================
+// 随机数
+// ===============================
+
+function randomInt(min, max) {
+
+    return Math.floor(
+        Math.random() *
+        (max - min + 1)
+    ) + min;
+}
+
+
+// ===============================
+// 延迟
+// ===============================
+
+function sleep(ms) {
+
+    return new Promise(
+        resolve => setTimeout(resolve, ms)
+    );
+}
+
+
+// ===============================
+// 通知
+// ===============================
+
+function notify(title, subtitle, body) {
+
+    $.notify(
+        title,
+        subtitle,
+        body
+    );
+}
+
+
+// ===============================
+// Env
+// ===============================
+
+function Env(name) {
+
+    const isLoon =
+        typeof $loon !== "undefined";
+
+
+    return {
+
+        name: name,
+
+
+        getdata(key) {
+
+            if (isLoon) {
+
+                return $persistentStore.read(key);
+            }
+
+            return null;
+        },
+
+
+        setdata(value, key) {
+
+            if (isLoon) {
+
+                return $persistentStore.write(
+                    value,
+                    key
+                );
+            }
+
+            return false;
+        },
+
+
+        get(options, callback) {
+
+            if (isLoon) {
+
+                $httpClient.get(
+                    options,
+                    callback
+                );
+
+            } else {
+
+                callback(
+                    "当前环境不是 Loon",
+                    null,
+                    null
+                );
+            }
+        },
+
+
+        notify(title, subtitle, body) {
+
+            if (isLoon) {
+
+                $notification.post(
+                    title,
+                    subtitle,
+                    body
+                );
+            }
+        }
+    };
+}
